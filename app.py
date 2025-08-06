@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 import os
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from datetime import datetime
 import locale
 import plotly.express as px
@@ -30,13 +30,32 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "Q62^S7v<yK-\\5LHm2PxQ")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
 DB_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(DB_URL)
+engine = create_engine(
+    DB_URL,
+    pool_timeout=20,
+    pool_recycle=300,
+    pool_pre_ping=True,
+    connect_args={
+        "connect_timeout": 30,
+        "application_name": "dashboard-precs"
+    }
+)
 
 # locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
 
 # ==============
 # FUNÇÕES
 # ==============
+
+@st.cache_data(ttl=300)
+def testar_conexao_db():
+    """Testa a conexão com o banco de dados"""
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1 as test"))
+            return True, "Conexão OK"
+    except Exception as e:
+        return False, str(e)
 
 @st.cache_data(ttl=600, show_spinner=False)
 def carregar_dados_movimentacoes(data_inicio=None, data_fim=None):
@@ -360,20 +379,30 @@ def main():
         st.warning("⚠️ A data de referência não pode ser maior que hoje. Ajustando para hoje.")
         data_ref = hoje
 
+    # Teste de conexão primeiro
+    with st.spinner("🔌 Testando conexão com banco de dados..."):
+        conectado, mensagem_conexao = testar_conexao_db()
+    
+    if not conectado:
+        st.error(f"❌ **Erro de conexão:** {mensagem_conexao}")
+        st.info("💡 Verifique se as credenciais do banco estão corretas nas secrets do Streamlit.")
+        return
+    
+    st.success("✅ Conectado ao banco de dados!")
+    
     # Loading customizado e otimizado
     loading_placeholder = st.empty()
     
     with loading_placeholder.container():
         st.markdown("""
-        <div style="display: flex; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="display: flex; justify-content: center; align-items: center; padding: 1rem;">
             <div style="text-align: center;">
                 <div style="
-                    width: 50px; height: 50px; border: 4px solid #f3f3f3;
-                    border-top: 4px solid #667eea; border-radius: 50%;
-                    animation: spin 1s linear infinite; margin: 0 auto 1rem auto;
+                    width: 40px; height: 40px; border: 3px solid #f3f3f3;
+                    border-top: 3px solid #667eea; border-radius: 50%;
+                    animation: spin 1s linear infinite; margin: 0 auto 0.5rem auto;
                 "></div>
-                <p style="color: #667eea; font-weight: bold;">💰 Carregando dashboard financeiro...</p>
-                <p style="color: #999; font-size: 0.9rem;">Aguarde alguns instantes</p>
+                <p style="color: #667eea; font-weight: bold;">💰 Processando dados...</p>
             </div>
         </div>
         <style>
