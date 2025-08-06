@@ -59,32 +59,41 @@ def testar_conexao_db():
 
 @st.cache_data(ttl=600, show_spinner=False)
 def carregar_dados_movimentacoes(data_inicio=None, data_fim=None):
-    query = """
-        SELECT id, municipio, data_movimentacao, saldo_anterior_valor, saldo_atualizado_valor
-        FROM movimentacoes
-        WHERE data_movimentacao IS NOT NULL
-    """
+    try:
+        query = """
+            SELECT id, municipio, data_movimentacao, saldo_anterior_valor, saldo_atualizado_valor
+            FROM movimentacoes
+            WHERE data_movimentacao IS NOT NULL
+        """
 
-    # Filtro inteligente baseado nos parâmetros ou padrão amplo
-    if data_inicio and data_fim:
-        filtros = [f"data_movimentacao BETWEEN '{data_inicio}' AND '{data_fim}'"]
-    else:
-        # Filtro padrão: últimos 3 anos para garantir dados suficientes
-        from datetime import datetime, timedelta
-        data_limite = (datetime.now() - timedelta(days=1095)).strftime('%Y-%m-%d')
-        filtros = [f"data_movimentacao >= '{data_limite}'"]
+        # Filtro inteligente baseado nos parâmetros ou padrão amplo
+        if data_inicio and data_fim:
+            filtros = [f"data_movimentacao BETWEEN '{data_inicio}' AND '{data_fim}'"]
+        else:
+            # Filtro padrão: últimos 3 anos para garantir dados suficientes
+            from datetime import datetime, timedelta
+            data_limite = (datetime.now() - timedelta(days=1095)).strftime('%Y-%m-%d')
+            filtros = [f"data_movimentacao >= '{data_limite}'"]
 
-    if filtros:
-        query += " AND " + " AND ".join(filtros)
+        if filtros:
+            query += " AND " + " AND ".join(filtros)
 
-    query += " ORDER BY municipio, data_movimentacao, id"
+        query += " ORDER BY municipio, data_movimentacao, id LIMIT 50000"  # Limite para performance
 
-    df = pd.read_sql(query, engine)
-    df = df.dropna(subset=['municipio', 'data_movimentacao']).copy()
-    df['data_movimentacao'] = pd.to_datetime(df['data_movimentacao'], errors='coerce')
-    df['data_only'] = df['data_movimentacao'].dt.date
-    df['municipio'] = df['municipio'].str.strip()
-    return df
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        
+        if df.empty:
+            return df
+            
+        df = df.dropna(subset=['municipio', 'data_movimentacao']).copy()
+        df['data_movimentacao'] = pd.to_datetime(df['data_movimentacao'], errors='coerce')
+        df['data_only'] = df['data_movimentacao'].dt.date
+        df['municipio'] = df['municipio'].str.strip()
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {str(e)}")
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=60, show_spinner=False)
