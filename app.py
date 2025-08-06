@@ -29,15 +29,20 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "Q62^S7v<yK-\\5LHm2PxQ")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
-DB_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# URL encode da senha para caracteres especiais
+import urllib.parse
+DB_PASSWORD_ENCODED = urllib.parse.quote_plus(DB_PASSWORD)
+DB_URL = f"postgresql://{DB_USER}:{DB_PASSWORD_ENCODED}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
 engine = create_engine(
     DB_URL,
-    pool_timeout=20,
-    pool_recycle=300,
+    pool_timeout=60,
+    pool_recycle=3600,
     pool_pre_ping=True,
     connect_args={
-        "connect_timeout": 30,
-        "application_name": "dashboard-precs"
+        "connect_timeout": 60,
+        "application_name": "dashboard-precs-streamlit",
+        "sslmode": "require"
     }
 )
 
@@ -388,13 +393,28 @@ def main():
         st.warning("⚠️ A data de referência não pode ser maior que hoje. Ajustando para hoje.")
         data_ref = hoje
 
+    # Debug de configuração (remover em produção)
+    with st.expander("🔍 Debug - Configurações de Conexão", expanded=False):
+        st.write("**Host:**", DB_HOST)
+        st.write("**Database:**", DB_NAME)
+        st.write("**User:**", DB_USER)
+        st.write("**Port:**", DB_PORT)
+        st.write("**URL:**", f"postgresql://{DB_USER}:***@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+    
     # Teste de conexão primeiro
     with st.spinner("🔌 Testando conexão com banco de dados..."):
         conectado, mensagem_conexao = testar_conexao_db()
     
     if not conectado:
         st.error(f"❌ **Erro de conexão:** {mensagem_conexao}")
-        st.info("💡 Verifique se as credenciais do banco estão corretas nas secrets do Streamlit.")
+        st.warning("🚨 **Possíveis soluções:**")
+        st.markdown("""
+        1. **AWS Security Group:** Permitir conexões na porta 5432 de `0.0.0.0/0`
+        2. **RDS Public Access:** Deve estar habilitado  
+        3. **VPC/Subnet:** Verificar configuração de rede
+        4. **Senha:** Verificar caracteres especiais nas secrets
+        5. **SSL:** Banco pode exigir conexão segura
+        """)
         return
     
     st.success("✅ Conectado ao banco de dados!")
